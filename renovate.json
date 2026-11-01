@@ -21,27 +21,6 @@
       "groupSlug": "non-major",
       "automerge": true,
       "minimumReleaseAge": "3 days"
-    },
-    {
-      "description": "go.mod の go の行も上げる。既定では上げない",
-      "matchManagers": [
-        "gomod"
-      ],
-      "matchDepNames": [
-        "go"
-      ],
-      "matchDepTypes": [
-        "golang"
-      ],
-      "rangeStrategy": "bump"
-    },
-    {
-      "description": "mise.toml と go.mod の Go を同じ PR で上げ、2 か所がずれないようにする",
-      "matchDepNames": [
-        "go"
-      ],
-      "groupName": "Go",
-      "groupSlug": "go"
     }
   ]
 }

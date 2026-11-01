@@ -1,5 +1,8 @@
+[settings]
+# Go の版は go.mod の toolchain の行だけに書く
+idiomatic_version_file_enable_tools = ["go"]
+
 [tools]
-go = "1.27.3"
 golangci-lint = "2.14.0"
 goreleaser = "2.18.2"
 jactionlint = "2.3.0"

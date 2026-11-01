@@ -15,6 +15,7 @@ ghq で管理しているリポジトリの Git worktree を決まった場所�
 ## コマンド
 
 ツールのバージョンとタスクは `mise.toml` にまとめてある。
+Go の版だけは `go.mod` の `toolchain` の行に書き、mise はそこから読む。`go` の行は `1.27` のようにパッチの番号を付けずに書く（`toolchain` と同じ版にすると、`go mod tidy` が `toolchain` の行を消す）。
 
 ```sh
 mise run test           # go test ./... と scripts/release_test.sh
