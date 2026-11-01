@@ -2,14 +2,24 @@
 go = "1.27.3"
 golangci-lint = "2.14.0"
 goreleaser = "2.18.2"
+jactionlint = "2.3.0"
+# jactionlint が run の中身を検査するのに使う
+shellcheck = "0.11.0"
 
 [tasks.test]
 description = "テストを走らせる"
-run = "go test ./..."
+run = [
+  "go test ./...",
+  "bash scripts/release_test.sh",
+]
 
 [tasks.lint]
-description = "golangci-lint をデフォルト設定で走らせる"
-run = "golangci-lint run ./..."
+description = "golangci-lint をデフォルト設定で走らせ、ワークフローとスクリプトを検査する"
+run = [
+  "golangci-lint run ./...",
+  "jactionlint",
+  "shellcheck scripts/*.sh",
+]
 
 [tasks.build]
 description = "バイナリを作る"
@@ -21,3 +31,11 @@ run = [
   "goreleaser check",
   "goreleaser release --snapshot --clean",
 ]
+
+[tasks.release-bump]
+description = "標準入力の PR のラベルから、上げる桁を決める"
+run = "bash scripts/release-bump.sh"
+
+[tasks.next-version]
+description = "次のリリースのタグを出す（引数は patch、minor、major、skip）"
+run = "bash scripts/next-version.sh"

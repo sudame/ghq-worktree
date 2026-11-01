@@ -65,3 +65,18 @@ worktree を作るとき、リポジトリに `.worktreeinclude` があれば、
 - Claude Code のフックが作るブランチは `worktree-<name>` で、起点は今の HEAD です。Claude Code の既定（リモートのデフォルトブランチ）とは違います。
 - サブエージェントの `isolation: worktree` で作った worktree は、Claude Code が消さないので残ります。`ghq-worktree remove` で消してください。
 - Bash から直接 `git worktree add` を実行したときは、フックが走りません。
+
+## 開発
+
+ツールとタスクは `mise.toml` にまとめてあります。`mise run test` と `mise run lint` でテストと検査を回せます。
+
+main にマージすると、自動でタグを打って GitHub Release を出します。上げる桁は PR のラベルで決まります。
+
+| ラベル | 上げる桁 |
+| --- | --- |
+| `release:major` | メジャー |
+| `release:minor` | マイナー |
+| なし | パッチ |
+| `release:skip` | リリースしない（その変更は次のリリースに入る） |
+
+依存は Renovate が上げます。メジャー以外の更新は、CI が通れば自動でマージされます。
