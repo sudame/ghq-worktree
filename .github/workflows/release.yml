@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# リリースは前の実行のタグを見て番号を決めるので、1 つずつ順に走らせる。
+# 待っている実行は後から来た実行に置き換わるが、上げる桁は前のタグ以降の PR すべてから決めるので、ラベルは落ちない。
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: go
+      # CI の同じ名前のジョブとキャッシュを共有する
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/go-build
+          key: go-build-${{ github.job }}-${{ hashFiles('mise.toml', 'go.mod') }}
+          restore-keys: go-build-${{ github.job }}-
+      - run: mise run test
+
+  lint:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: go golangci-lint jactionlint shellcheck
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: go-build-${{ github.job }}-${{ hashFiles('mise.toml', 'go.mod') }}
+          restore-keys: go-build-${{ github.job }}-
+      - run: mise run lint
+
+  release:
+    needs: [test, lint]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # 配るバイナリを作るジョブなので、PR からも書けるキャッシュは読まない
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: go goreleaser
+          cache: false
+      # 1 行に PR 1 件で、release: のラベルだけをカンマで区切って書く。PR のないコミットは、ラベルのない PR として空行にする
+      # ほかのラベルを落とすのは、名前にカンマを含むラベルを区切りと取り違えないため
+      - name: 前のタグ以降にマージされた PR のラベルを集める
+        run: |
+          latest="$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+          range="${latest:+$latest..}HEAD"
+          for sha in $(git rev-list --first-parent "$range"); do
+            gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" \
+              --jq '[.[] | select(.merged_at != null)] | if length == 0 then "" else .[] | [.labels[].name | select(IN("release:major", "release:minor", "release:skip"))] | join(",") end'
+          done > "$RUNNER_TEMP/labels.txt"
+          cat "$RUNNER_TEMP/labels.txt"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - id: version
+        run: |
+          bump="$(mise run --quiet release-bump < "$RUNNER_TEMP/labels.txt")"
+          tag="$(mise run --quiet next-version "$bump")"
+          echo "$bump → ${tag:-リリースしない}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: タグを打つ
+        if: steps.version.outputs.tag != ''
+        run: |
+          if ! git rev-parse --quiet --verify "refs/tags/$TAG" >/dev/null; then
+            git tag "$TAG"
+            git push origin "refs/tags/$TAG"
+          fi
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+      - if: steps.version.outputs.tag != ''
+        run: goreleaser release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.version.outputs.tag }}

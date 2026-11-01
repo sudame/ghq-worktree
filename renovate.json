@@ -1,0 +1,47 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "timezone": "Asia/Tokyo",
+  "schedule": [
+    "before 9am"
+  ],
+  "osvVulnerabilityAlerts": true,
+  "packageRules": [
+    {
+      "description": "メジャー以外は 1 つの PR にまとめ、CI が通ったら自動でマージする。出たばかりの版は避ける。ブランチ名は日本語から作れないので groupSlug を書く",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin"
+      ],
+      "groupName": "メジャー以外の更新",
+      "groupSlug": "non-major",
+      "automerge": true,
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "go.mod の go の行も上げる。既定では上げない",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDepNames": [
+        "go"
+      ],
+      "matchDepTypes": [
+        "golang"
+      ],
+      "rangeStrategy": "bump"
+    },
+    {
+      "description": "mise.toml と go.mod の Go を同じ PR で上げ、2 か所がずれないようにする",
+      "matchDepNames": [
+        "go"
+      ],
+      "groupName": "Go",
+      "groupSlug": "go"
+    }
+  ]
+}
