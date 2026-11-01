@@ -101,3 +101,19 @@ func TestBadArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestHookCreateReusesExistingWorktree(t *testing.T) {
+	e := testenv.New(t)
+	in := `{"cwd":"` + e.Repo + `","name":"again"}`
+	first, _, err := run(t, e.Home, in, "hook", "create")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := run(t, e.Home, in, "hook", "create")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Errorf("second create = %q, want %q", second, first)
+	}
+}

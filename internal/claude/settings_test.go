@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -129,7 +130,7 @@ func TestInstallAndUninstall(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Install(dir, "v1.2.3"); err != nil {
+	if err := Install(dir, "v1.2.3", io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if got := InstalledSkillVersion(dir); got != "v1.2.3" {
@@ -171,7 +172,7 @@ func TestInstallFollowsSymlink(t *testing.T) {
 	if err := os.Symlink(real, filepath.Join(conf, "settings.json")); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install(conf, "dev"); err != nil {
+	if err := Install(conf, "dev", io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Lstat(filepath.Join(conf, "settings.json"))
@@ -187,5 +188,43 @@ func TestInstallFollowsSymlink(t *testing.T) {
 	}
 	if !gjson.GetBytes(data, "hooks.WorktreeCreate").Exists() {
 		t.Errorf("link target not updated: %s", data)
+	}
+}
+
+func TestEditHooksKeepsNonStandardFormatting(t *testing.T) {
+	in := "{\n    \"permissions\": {\"deny\": [\"a\"]}\n}"
+	added, err := EditHooks([]byte(in), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(added), "{\n    \"permissions\": {\"deny\": [\"a\"]}") {
+		t.Errorf("existing formatting changed:\n%s", added)
+	}
+	removed, err := EditHooks(added, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(removed) != in {
+		t.Errorf("round trip = %q, want %q", removed, in)
+	}
+}
+
+func TestEditHooksKeepsUserHookInSameGroup(t *testing.T) {
+	in := `{"hooks":{"WorktreeRemove":[{"hooks":[{"type":"command","command":"ghq-worktree hook remove"},{"type":"command","command":"notify.sh"}]}]}}`
+	removed, err := EditHooks([]byte(in), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hooks := gjson.GetBytes(removed, "hooks.WorktreeRemove.0.hooks").Array()
+	if len(hooks) != 1 || hooks[0].Get("command").String() != "notify.sh" {
+		t.Errorf("user hook lost: %s", removed)
+	}
+}
+
+func TestForeignWorktreeHooks(t *testing.T) {
+	in := `{"hooks":{"WorktreeCreate":[{"hooks":[{"type":"command","command":"other"}]},{"hooks":[{"type":"command","command":"ghq-worktree hook create"}]}]}}`
+	got := ForeignWorktreeHooks([]byte(in))
+	if len(got) != 1 || got[0] != "WorktreeCreate: other" {
+		t.Errorf("ForeignWorktreeHooks = %v", got)
 	}
 }

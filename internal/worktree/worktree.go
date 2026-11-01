@@ -59,6 +59,29 @@ func Add(dir, branch, start string, log io.Writer) (string, error) {
 	return path, nil
 }
 
+// Existing は branch の worktree がこの CLI の置き場所にすでにあれば、そのパスを返す。
+func Existing(dir, branch string) (string, bool) {
+	repo, err := layout.RepoRoot(dir)
+	if err != nil {
+		return "", false
+	}
+	entries, err := List(repo)
+	if err != nil {
+		return "", false
+	}
+	p, err := layout.WorktreePath(repo, branch)
+	if err != nil {
+		return "", false
+	}
+	p = layout.Canonical(p)
+	for _, e := range entries {
+		if e.Path == p && e.Branch == branch {
+			return p, true
+		}
+	}
+	return "", false
+}
+
 func branchExists(dir, branch string) bool {
 	_, err := git.Run(dir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
 	return err == nil
@@ -76,25 +99,7 @@ func Remove(dir, target string, force bool, log io.Writer) error {
 		return err
 	}
 
-	var candidates []string
-	if p, err := layout.WorktreePath(repo, target); err == nil {
-		candidates = append(candidates, p)
-	}
-	candidates = append(candidates, target)
-
-	var found *Entry
-	for _, c := range candidates {
-		c = layout.Canonical(c)
-		for i := range entries {
-			if entries[i].Path == c {
-				found = &entries[i]
-				break
-			}
-		}
-		if found != nil {
-			break
-		}
-	}
+	found := find(entries, repo, dir, target)
 	if found == nil {
 		return fmt.Errorf("no worktree of %s matches %q", repo, target)
 	}
@@ -111,14 +116,54 @@ func Remove(dir, target string, force bool, log io.Writer) error {
 	}
 	logf(log, "removed %s\n", found.Path)
 
-	if found.Branch != "" {
-		if _, err := git.Run(repo, "branch", "-d", found.Branch); err != nil {
-			logf(log, "kept branch %s: %v\n", found.Branch, err)
-		} else {
-			logf(log, "deleted branch %s\n", found.Branch)
+	deleteBranchIfMerged(repo, *found, log)
+	return nil
+}
+
+// find は target に当たる worktree を探す。target はまずブランチ名として、次にパスとして見る。
+func find(entries []Entry, repo, dir, target string) *Entry {
+	if p, err := layout.WorktreePath(repo, target); err == nil {
+		p = layout.Canonical(p)
+		for i := range entries {
+			// feat/x と feat-x は同じパスになるので、ブランチ名でも確かめる
+			if entries[i].Path == p && entries[i].Branch == target {
+				return &entries[i]
+			}
+		}
+	}
+	p := target
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(dir, p)
+	}
+	p = layout.Canonical(p)
+	for i := range entries {
+		if entries[i].Path == p {
+			return &entries[i]
 		}
 	}
 	return nil
+}
+
+// deleteBranchIfMerged は、worktree のブランチが元の作業ディレクトリの HEAD にマージ済みなら消す。
+// worktree の中で別のブランチに切り替えていた場合は、そのブランチは消さない。
+func deleteBranchIfMerged(repo string, e Entry, log io.Writer) {
+	if e.Branch == "" {
+		return
+	}
+	if layout.SanitizeBranch(e.Branch) != filepath.Base(e.Path) {
+		logf(log, "kept branch %s: the worktree was not created for it\n", e.Branch)
+		return
+	}
+	// git branch -d は upstream にマージ済みなら消してしまうので、HEAD との関係を自分で確かめる
+	if _, err := git.Run(repo, "merge-base", "--is-ancestor", "refs/heads/"+e.Branch, "HEAD"); err != nil {
+		logf(log, "kept branch %s: not merged into HEAD of %s\n", e.Branch, repo)
+		return
+	}
+	if _, err := git.Run(repo, "branch", "-D", e.Branch); err != nil {
+		logf(log, "kept branch %s: %v\n", e.Branch, err)
+		return
+	}
+	logf(log, "deleted branch %s\n", e.Branch)
 }
 
 // List は dir のリポジトリの worktree を、元の作業ディレクトリも含めて返す。

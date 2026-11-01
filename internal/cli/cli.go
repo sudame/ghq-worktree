@@ -99,7 +99,7 @@ func Run(args []string, env Env) error {
 			return err
 		}
 		if cmd == "install" {
-			if err := claude.Install(dir, env.Version); err != nil {
+			if err := claude.Install(dir, env.Version, env.Stderr); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(env.Stderr, "installed hooks and skill into %s\n", dir)
@@ -199,11 +199,18 @@ func hookCreate(env Env) error {
 		return errors.New("hook input needs cwd and name")
 	}
 	warnStaleSkill(env)
-	path, err := worktree.Add(in.Cwd, "worktree-"+in.Name, "", env.Stderr)
-	if err != nil {
-		return err
+	branch := "worktree-" + in.Name
+	// 同じ名前で残してあった worktree は、Claude Code の既定と同じく開き直す
+	path, ok := worktree.Existing(in.Cwd, branch)
+	if ok {
+		_, _ = fmt.Fprintf(env.Stderr, "reusing %s\n", path)
+	} else {
+		var err error
+		if path, err = worktree.Add(in.Cwd, branch, "", env.Stderr); err != nil {
+			return err
+		}
 	}
-	_, err = fmt.Fprintln(env.Stdout, path)
+	_, err := fmt.Fprintln(env.Stdout, path)
 	return err
 }
 

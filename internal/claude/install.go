@@ -3,6 +3,7 @@ package claude
 import (
 	_ "embed"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,8 +26,9 @@ func Skill(version string) string {
 }
 
 // Install はフックとスキルを Claude Code の設定ディレクトリ dir に書き込む。
-func Install(dir, version string) error {
-	if err := updateSettings(dir, true); err != nil {
+// 既存のほかの worktree フックがあれば log に警告を書く。
+func Install(dir, version string, log io.Writer) error {
+	if err := updateSettings(dir, true, log); err != nil {
 		return err
 	}
 	return writeFile(skillPath(dir), []byte(Skill(version)))
@@ -34,7 +36,7 @@ func Install(dir, version string) error {
 
 // Uninstall は Install が書き込んだものを消す。
 func Uninstall(dir string) error {
-	if err := updateSettings(dir, false); err != nil {
+	if err := updateSettings(dir, false, io.Discard); err != nil {
 		return err
 	}
 	p := skillPath(dir)

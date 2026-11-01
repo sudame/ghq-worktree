@@ -33,7 +33,7 @@ ghq-worktree を更新したら、`install claude-code` を実行し直してく
 | コマンド | 動き |
 |---|---|
 | `ghq-worktree add <branch> [<start-point>]` | worktree を作り、パスを出力する。ブランチが無ければ `<start-point>`（省略時は HEAD）から作る |
-| `ghq-worktree remove <branch\|path> [--force]` | worktree を消す。ブランチはマージ済みのときだけ消す |
+| `ghq-worktree remove <branch\|path> [--force]` | worktree を消す。ブランチは、元の作業ディレクトリの HEAD にマージ済みのときだけ消す |
 | `ghq-worktree list [--all]` | 今のリポジトリの worktree を出力する。`--all` は worktree ルートの下を全部出力する |
 | `ghq-worktree path <branch>` | worktree のパスを出力する |
 

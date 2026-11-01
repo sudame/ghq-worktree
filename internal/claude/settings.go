@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,9 +36,10 @@ func ConfigDir() (string, error) {
 
 // EditHooks は settings.json の中身に、このコマンドのフックを足す（add が false なら消す）。
 // ほかのキーとフックには触らず、キーの順番を保つ。
+// 元が Claude Code の書く 2 文字インデントの形なら、同じ形に整えて返す。そうでなければ整形しない。
 func EditHooks(data []byte, add bool) ([]byte, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
-		data = []byte("{}")
+		data = []byte("{}\n")
 	}
 	if !gjson.ValidBytes(data) {
 		return nil, errors.New("settings.json is not valid JSON")
@@ -48,6 +50,8 @@ func EditHooks(data []byte, add bool) ([]byte, error) {
 	if h := gjson.GetBytes(data, "hooks"); h.Exists() && !h.IsObject() {
 		return nil, errors.New(`"hooks" in settings.json is not an object`)
 	}
+	trailingNewline := bytes.HasSuffix(data, []byte("\n"))
+	canonical := bytes.Equal(bytes.TrimRight(prettyJSON(data), "\n"), bytes.TrimRight(data, "\n"))
 
 	var err error
 	for _, h := range hookEvents {
@@ -56,20 +60,29 @@ func EditHooks(data []byte, add bool) ([]byte, error) {
 		if cur.Exists() && !cur.IsArray() {
 			return nil, fmt.Errorf("%q in settings.json is not an array", path)
 		}
+		changed := add
 		var items []string
-		for _, it := range cur.Array() {
-			if !isOurs(it) {
-				items = append(items, it.Raw)
+		for _, group := range cur.Array() {
+			raw, keep, err := withoutOurs(group)
+			if err != nil {
+				return nil, err
 			}
+			if raw != group.Raw || !keep {
+				changed = true
+			}
+			if keep {
+				items = append(items, raw)
+			}
+		}
+		if !changed {
+			continue
 		}
 		if add {
 			items = append(items, fmt.Sprintf(`{"hooks":[{"type":"command","command":%q}]}`, h.command))
 		}
 		if len(items) == 0 {
-			if cur.Exists() {
-				if data, err = sjson.DeleteBytes(data, path); err != nil {
-					return nil, err
-				}
+			if data, err = sjson.DeleteBytes(data, path); err != nil {
+				return nil, err
 			}
 			continue
 		}
@@ -83,16 +96,59 @@ func EditHooks(data []byte, add bool) ([]byte, error) {
 			return nil, err
 		}
 	}
-	return pretty.PrettyOptions(data, &pretty.Options{Indent: "  ", SortKeys: false}), nil
+	if canonical {
+		data = prettyJSON(data)
+	}
+	data = bytes.TrimRight(data, "\n")
+	if trailingNewline {
+		data = append(data, '\n')
+	}
+	return data, nil
 }
 
-func isOurs(item gjson.Result) bool {
-	for _, h := range item.Get("hooks").Array() {
-		if strings.HasPrefix(h.Get("command").String(), hookPrefix) {
-			return true
+func prettyJSON(data []byte) []byte {
+	return pretty.PrettyOptions(data, &pretty.Options{Indent: "  ", SortKeys: false})
+}
+
+func isOurs(hook gjson.Result) bool {
+	return strings.HasPrefix(hook.Get("command").String(), hookPrefix)
+}
+
+// withoutOurs はフックのグループから、このコマンドのフックだけを除く。
+// グループが空になったら keep を false にする。
+func withoutOurs(group gjson.Result) (raw string, keep bool, err error) {
+	var rest []string
+	found := false
+	for _, h := range group.Get("hooks").Array() {
+		if isOurs(h) {
+			found = true
+			continue
+		}
+		rest = append(rest, h.Raw)
+	}
+	if !found {
+		return group.Raw, true, nil
+	}
+	if len(rest) == 0 {
+		return "", false, nil
+	}
+	raw, err = sjson.SetRaw(group.Raw, "hooks", "["+strings.Join(rest, ",")+"]")
+	return raw, err == nil, err
+}
+
+// ForeignWorktreeHooks は、このコマンド以外の WorktreeCreate / WorktreeRemove フックのコマンドを返す。
+func ForeignWorktreeHooks(data []byte) []string {
+	var out []string
+	for _, h := range hookEvents {
+		for _, group := range gjson.GetBytes(data, "hooks."+h.event).Array() {
+			for _, hook := range group.Get("hooks").Array() {
+				if !isOurs(hook) {
+					out = append(out, h.event+": "+hook.Get("command").String())
+				}
+			}
 		}
 	}
-	return false
+	return out
 }
 
 // writeFile は path がシンボリックリンクならリンク先を、一時ファイル経由で書き換える。
@@ -125,7 +181,7 @@ func writeFile(path string, data []byte) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-func updateSettings(dir string, add bool) error {
+func updateSettings(dir string, add bool, log io.Writer) error {
 	path := filepath.Join(dir, "settings.json")
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
@@ -137,6 +193,11 @@ func updateSettings(dir string, add bool) error {
 	out, err := EditHooks(data, add)
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
+	}
+	if add {
+		for _, c := range ForeignWorktreeHooks(out) {
+			_, _ = fmt.Fprintf(log, "warning: %s also has %s; it may conflict with ghq-worktree\n", path, c)
+		}
 	}
 	if bytes.Equal(out, data) {
 		return nil

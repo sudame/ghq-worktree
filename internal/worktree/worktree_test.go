@@ -196,3 +196,63 @@ func TestListAndListAll(t *testing.T) {
 		t.Errorf("ListAll on missing root = %v, %v", none, err)
 	}
 }
+
+func TestRemoveKeepsBranchMergedOnlyIntoUpstream(t *testing.T) {
+	e := testenv.New(t)
+	remote := filepath.Join(e.Home, "remote.git")
+	e.Git(t, "", "init", "-q", "--bare", remote)
+	e.Git(t, e.Repo, "remote", "add", "origin", remote)
+	e.Git(t, e.Repo, "push", "-q", "origin", "main")
+	path, err := Add(e.Repo, "pushed", "", &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Git(t, path, "commit", "-q", "--allow-empty", "-m", "work")
+	e.Git(t, path, "push", "-q", "-u", "origin", "pushed")
+	if err := Remove(e.Repo, "pushed", false, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if out := e.Git(t, e.Repo, "branch", "--list", "pushed"); out == "" {
+		t.Error("branch not merged into HEAD was deleted")
+	}
+}
+
+func TestRemoveKeepsBranchSwitchedToInsideWorktree(t *testing.T) {
+	e := testenv.New(t)
+	e.Git(t, e.Repo, "branch", "develop")
+	path, err := Add(e.Repo, "made", "", &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Git(t, path, "switch", "-q", "develop")
+	if err := Remove(e.Repo, path, false, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if out := e.Git(t, e.Repo, "branch", "--list", "develop"); out == "" {
+		t.Error("develop was deleted")
+	}
+}
+
+func TestRemoveByBranchChecksBranchName(t *testing.T) {
+	e := testenv.New(t)
+	if _, err := Add(e.Repo, "feat/x", "", &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Remove(e.Repo, "feat-x", true, &bytes.Buffer{}); err == nil {
+		t.Error("remove feat-x removed the worktree of feat/x")
+	}
+}
+
+func TestExisting(t *testing.T) {
+	e := testenv.New(t)
+	if _, ok := Existing(e.Repo, "w"); ok {
+		t.Fatal("Existing before Add")
+	}
+	path, err := Add(e.Repo, "w", "", &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := Existing(e.Repo, "w"); !ok || got != path {
+		t.Errorf("Existing = %q, %v", got, ok)
+	}
+}
