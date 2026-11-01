@@ -1,0 +1,23 @@
+[tools]
+go = "1.27.3"
+golangci-lint = "2.14.0"
+goreleaser = "2.18.2"
+
+[tasks.test]
+description = "テストを走らせる"
+run = "go test ./..."
+
+[tasks.lint]
+description = "golangci-lint をデフォルト設定で走らせる"
+run = "golangci-lint run ./..."
+
+[tasks.build]
+description = "バイナリを作る"
+run = "go build -o ghq-worktree ."
+
+[tasks.release-check]
+description = "リリースの設定を確かめ、タグなしで試しにビルドする"
+run = [
+  "goreleaser check",
+  "goreleaser release --snapshot --clean",
+]
