@@ -3,8 +3,8 @@
 idiomatic_version_file_enable_tools = ["go"]
 
 [tools]
-golangci-lint = "2.14.0"
-goreleaser = "2.18.2"
+golangci-lint = "2.15.0"
+goreleaser = "2.19.0"
 jactionlint = "2.3.0"
 # jactionlint が run の中身を検査するのに使う
 shellcheck = "0.11.0"
