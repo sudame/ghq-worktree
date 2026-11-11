@@ -2,7 +2,7 @@ module github.com/sudame/ghq-worktree
 
 go 1.27
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 require (
 	github.com/tidwall/gjson v1.20.1
