@@ -6,7 +6,7 @@ toolchain go1.27.4
 
 require (
 	github.com/tidwall/gjson v1.20.6
-	github.com/tidwall/pretty v1.3.0
+	github.com/tidwall/pretty v1.3.1
 	github.com/tidwall/sjson v1.2.11
 )
 
